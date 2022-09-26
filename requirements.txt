@@ -1,0 +1,4 @@
+click
+PyGithub
+python-gitlab
+loguru
