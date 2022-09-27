@@ -12,6 +12,8 @@ from gitlab import Gitlab
 
 
 uploads_pattern = re.compile("(/uploads/[^\s\)]+)")
+issues_pattern = re.compile("#([1-9][0-9]*)")
+merge_requests_pattern = re.compile("#([1-9][0-9]*)")
 
 
 def slow_down(_func=None, *, rate=1):
@@ -65,16 +67,32 @@ def retry(_func=None, *, times=1, delay=0, forever=False):
         return decorator_retry(_func)
 
 
-def fix_upload_links(text, url):
-    return uploads_pattern.sub(r'{}\1'.format(url), text)
-
-
 def fix_mentions(text, users):
     for user in users:
         text = text.replace(
             "@{}".format(user["username"]),
             "[@{}]({})".format(user["username"], user["web_url"])
         )
+
+    return text
+
+
+def fix_upload_links(text, url):
+    return uploads_pattern.sub(r'{}\1'.format(url), text)
+
+
+def fix_issue_references(text, url):
+    return issues_pattern.sub(r'{}/-/issues/\1'.format(url), text)
+
+
+def fix_merge_requests_references(text, url):
+    return merge_requests_pattern.sub(r'{}/-/merge_requests/\1'.format(url), text)
+
+
+def fix_links(text, url):
+    text = fix_upload_links(text, url)
+    text = fix_issue_references(text, url)
+    text = fix_merge_requests_references(text, url)
 
     return text
 
@@ -100,7 +118,7 @@ def add_comment_footer(comment, url):
         + "\n"
         + "\n"
         + "---\n"
-        + "<sub>You can find the comment from GitLab [here]({}).</sub>\n".format(url)
+        + "<sub>You can find the original comment from GitLab [here]({}).</sub>\n".format(url)
     )
 
 
@@ -180,7 +198,7 @@ def move_labels(gl_project, gh_project):
 def move_comments(gl_project, gl_issue, gh_issue):
     """Move issue comments from GitLab to GitLab."""
 
-    for note in gl_issue.notes.list(iterator=True):
+    for note in sorted(gl_issue.notes.list(iterator=True), key=operator.attrgetter('created_at')):
         # Skip private comments
         if note.confidential:
             continue
@@ -189,7 +207,7 @@ def move_comments(gl_project, gl_issue, gh_issue):
             logger.info("Move comment '{}'.", note.id)
             click.echo("    * Move comment {}".format(note.id))
 
-            comment = fix_upload_links(note.body, gl_project.web_url)
+            comment = fix_links(note.body, gl_project.web_url)
             comment = fix_mentions(comment, gl_issue.participants())
             comment = add_comment_footer(comment, "{}#note_{}".format(gl_issue.web_url, note.id))
 
@@ -208,11 +226,10 @@ def move_issues(gl_project, gh_project):
         click.echo("  * Move issue #{}".format(gl_issue.iid))
 
         issue_description = gl_issue.description or ""
-        issue_description = fix_upload_links(issue_description, gl_project.web_url)
+        issue_description = fix_links(issue_description, gl_project.web_url)
         issue_description = fix_mentions(issue_description, gl_issue.participants())
         issue_description = add_issue_footer(issue_description, gl_issue.web_url)
 
-        gh_issue = None
         gh_issue = create_github_issue(
             gh_project,
             gl_issue.title,
