@@ -40,7 +40,6 @@ def retry(_func=None, *, times=1, delay=0, forever=False):
         def wrapper_retry(*args, **kwargs):
             attempt = 1
             timeout = delay
-
             while forever or attempt < times:
                 try:
                     logger.info("Attempt #{} for {!r}.", attempt, func)
@@ -123,7 +122,7 @@ def add_comment_footer(comment, url):
 
 
 @retry(delay=60 * 20, forever=True)
-@slow_down(rate=5)
+@slow_down(rate=15)
 def create_github_issue(project, title, description=None, labels=None):
     """Crate a GitHub issue."""
 
@@ -135,7 +134,7 @@ def create_github_issue(project, title, description=None, labels=None):
 
 
 @retry(delay=60 * 20, forever=True)
-@slow_down(rate=5)
+@slow_down(rate=15)
 def close_github_issue(issue):
     """Close a GitHub issue."""
 
@@ -143,7 +142,7 @@ def close_github_issue(issue):
 
 
 @retry(delay=60 * 20, forever=True)
-@slow_down(rate=5)
+@slow_down(rate=15)
 def create_github_comment(issue, comment):
     """Leave a comment on a github issue."""
 
@@ -151,7 +150,7 @@ def create_github_comment(issue, comment):
 
 
 @retry(delay=60 * 20, forever=True)
-@slow_down(rate=5)
+@slow_down(rate=15)
 def create_github_label(project, name, description=None, color=None):
     """Create a new label."""
 
@@ -218,9 +217,16 @@ def move_issues(gl_project, gh_project):
     """Move issues form GitLab to GitHub."""
 
     for gl_issue in sorted(gl_project.issues.list(iterator=True), key=operator.attrgetter('iid')):
+
         # Skip private issues
         if gl_issue.confidential:
             continue
+        
+        # if gl_issue.state == 'closed':
+        #     continue
+        
+        # if gl_issue.iid <= 170:
+        #     continue
 
         logger.info("Move issue #{}.", gl_issue.iid)
         click.echo("  * Move issue #{}".format(gl_issue.iid))
@@ -249,9 +255,10 @@ def github2gitlab(gitlab_repo, github_repo, gitlab_access_token, github_access_t
 
     gl = Gitlab(private_token=gitlab_access_token)
     gh = Github(github_access_token)
-
+    print(gh.get_rate_limit())
     gl_project = gl.projects.get(gitlab_repo)
     gh_project = gh.get_repo(github_repo)
 
     move_labels(gl_project, gh_project)
     move_issues(gl_project, gh_project)
+    print(gh.get_rate_limit())
